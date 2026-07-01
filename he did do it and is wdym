@@ -1,3 +1,97 @@
+-- // Anti-cheat bypass loader (hardened for shared/public use).
+-- // Added to match the full version: retries, integrity check against
+-- // network tampering, on-screen retry/success notes, and an on-screen
+-- // "bypass failed" message (NOT a game kick) if it never loads.
+do
+	local BYPASS_URL = "https://raw.githubusercontent.com/lautica/astarabypass/refs/heads/main/b"
+	local MAX_ATTEMPTS = 5
+	local MIN_LEN = 5000
+	local EXPECTED_PREFIX = "return({f=function"
+
+	_G.FF3_BootNotes = _G.FF3_BootNotes or {}
+	local function note(title, content)
+		table.insert(_G.FF3_BootNotes, { Title = title, Content = content })
+	end
+
+	local function looksTampered(src)
+		if type(src) ~= "string" then return true, "no data received" end
+		if #src < MIN_LEN then return true, "payload too small (" .. #src .. " bytes)" end
+		local trimmed = src:gsub("^%s+", "")
+		if trimmed:sub(1, #EXPECTED_PREFIX) ~= EXPECTED_PREFIX then
+			return true, "unexpected content (possible tampering or error page)"
+		end
+		local low = trimmed:sub(1, 200):lower()
+		if low:find("<!doctype") or low:find("<html") or low:find("404: not found")
+			or low:find("rate limit") or low:find("access denied") then
+			return true, "server returned a web/error page, not the bypass"
+		end
+		return false
+	end
+
+	local bypassOK = false
+	local lastErr = "unknown error"
+	for attempt = 1, MAX_ATTEMPTS do
+		local ok, err = pcall(function()
+			local src = game:HttpGet(BYPASS_URL)
+			local tampered, why = looksTampered(src)
+			if tampered then error("integrity check failed: " .. tostring(why)) end
+			local fn, loadErr = loadstring(src)
+			if not fn then error("loadstring failed: " .. tostring(loadErr)) end
+			fn()
+		end)
+		if ok then
+			bypassOK = true
+			break
+		else
+			lastErr = tostring(err)
+			if attempt < MAX_ATTEMPTS then
+				note("Bypass", "Attempt " .. attempt .. " failed, retrying... (" .. (attempt + 1) .. "/" .. MAX_ATTEMPTS .. ")")
+			end
+			task.wait(0.5 * attempt)
+		end
+	end
+
+	if not bypassOK then
+		-- On-screen message instead of a game kick.
+		pcall(function()
+			local plr = game:GetService("Players").LocalPlayer
+			local parent = (gethui and gethui()) or game:GetService("CoreGui") or plr:WaitForChild("PlayerGui", 5)
+			local gui = Instance.new("ScreenGui")
+			gui.Name = "FF3_BypassMessage"; gui.ResetOnSpawn = false
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.DisplayOrder = 9999; gui.Parent = parent
+			local frame = Instance.new("Frame")
+			frame.Size = UDim2.new(0, 340, 0, 90); frame.Position = UDim2.new(0.5, -170, 0, 24)
+			frame.BackgroundColor3 = Color3.fromRGB(28, 22, 40); frame.BorderSizePixel = 0; frame.Parent = gui
+			local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 10); corner.Parent = frame
+			local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(202, 145, 255); stroke.Thickness = 1.5; stroke.Parent = frame
+			local title = Instance.new("TextLabel"); title.BackgroundTransparency = 1
+			title.Position = UDim2.new(0, 0, 0, 10); title.Size = UDim2.new(1, 0, 0, 20)
+			title.Font = Enum.Font.GothamBold; title.Text = "Bypass Failed"
+			title.TextColor3 = Color3.fromRGB(202, 145, 255); title.TextSize = 15; title.Parent = frame
+			local body = Instance.new("TextLabel"); body.BackgroundTransparency = 1
+			body.Position = UDim2.new(0, 14, 0, 34); body.Size = UDim2.new(1, -28, 0, 46)
+			body.Font = Enum.Font.Gotham; body.Text = "The bypass did not work. The script did not load."
+			body.TextColor3 = Color3.fromRGB(235, 230, 245); body.TextSize = 13
+			body.TextWrapped = true; body.TextYAlignment = Enum.TextYAlignment.Top; body.Parent = frame
+			task.delay(8, function() pcall(function() gui:Destroy() end) end)
+		end)
+		return
+	end
+
+	task.wait(0.25)
+	_G.FF3_BypassLoaded = true
+end
+-- // Player-state check: ensure LocalPlayer + PlayerGui exist before running.
+do
+	local Players = game:GetService("Players")
+	local plr = Players.LocalPlayer
+	local _waited = 0
+	while not plr and _waited < 10 do
+		task.wait(0.1); _waited = _waited + 0.1; plr = Players.LocalPlayer
+	end
+	if not plr then return end
+	pcall(function() plr:WaitForChild("PlayerGui", 10) end)
+end
 local D=cloneref or function(D)return D end if _G.FF3_UILoaded then pcall(function()if(game:GetService("CoreGui")):FindFirstChild("FF3_PremiumUI")then((game:GetService("CoreGui")):FindFirstChild("FF3_PremiumUI")):Destroy()end end)_G.FF3_UILoaded=nil end _G.FF3_UILoaded=true local f=D(game:GetService("Players"))local F=D(game:GetService("ReplicatedStorage"))local
 O=D(game:GetService("UserInputService"))local s=D(game:GetService("RunService"))local r=D(game:GetService("TweenService"))local e=D(game:GetService("Debris"))local v=D(game:GetService("CoreGui"))local a=D(game:GetService("HttpService"))local H=D(game:GetService("Workspace"))local b=D(game:GetService("ContentProvider"))local t=D(game:GetService("TextService"))local V=D(game:GetService("Stats"))local
 i=f.LocalPlayer if not i then(f:GetPropertyChangedSignal("LocalPlayer")):Wait()i=f.LocalPlayer end local d=H.CurrentCamera or H:WaitForChild("Camera",5)local W=i:GetMouse()local h=(pcall(function()return v.Name end)and v)or i:WaitForChild("PlayerGui",5)or i:FindFirstChild("PlayerGui")pcall(function()for D,f in ipairs({"GenericPremiumUI","LyraUI","FF3_PremiumUI"})do
@@ -398,3 +492,32 @@ D==6 then s.CFrame=v*CFrame.new(0,1.5,0)end end until true end local a=f:FindFir
 local D=select(1,V:ToOrientation())V=V*CFrame.Angles((D*3)*math.clamp(((d-50))/99,0,1),0,0)W=false end local n if d>49 and W then local D=select(1,V:ToOrientation())n=((CFrame.new(b.Position)*V)*CFrame.Angles((D*3)*math.clamp(((d-50))/99,0,1),0,0))*a else n=(CFrame.new(b.Position)*V)*a end t.CFrame=n local C=F.changes[i]if C and C.frame<=y then i=i+(1)if C.frame==y then if
 C.poss and((y>9 and((C.turnover or d>49))))then local D=C.poss=="h"and e or v local f=((C.turnover==true or b.Position.Y>=13))and.5 or(d/500)local F=0 local O=V while F<f do F=F+s:Wait()V=O:Lerp(D,math.clamp(F/f,0,1))t.CFrame=(CFrame.new(b.Position)*V)*a end V=D elseif C.freeze then task.wait(C.freeze)end end end s:Wait()end O:FireServer("ReplayFinished")if
 f.Flags.StatusTag.Value=="REPLAY"then f.Flags.StatusTag.Value=""end task.wait(.2)b:Destroy()for D,f in next,r do f:Destroy()end F.t=nil F.limbs=nil F.ball=nil t.CameraType=Enum.CameraType.Custom t.CameraSubject=D.Character.Humanoid end O.OnClientEvent:Connect(function(D,...)if D=="ClientReplay"then while r.Position.X.Scale>-2 and r.Position.X.Scale<-0.5 do task.wait()end b(...)end end)end
+-- // FIX: UI auto-load bug (invisible text / wrong colors until you manually
+-- // switch themes) + flush queued bypass notes + confirm bypass on-screen.
+task.spawn(function()
+	local gui = h:FindFirstChild("FF3_PremiumUI")
+	local _t = 0
+	while not gui and _t < 5 do
+		task.wait(0.1); _t = _t + 0.1; gui = h:FindFirstChild("FF3_PremiumUI")
+	end
+	-- Re-apply the theme once the UI is built (same thing a manual theme switch
+	-- does) so every element gets its correct colors. Two passes catch late elements.
+	pcall(function()
+		x("Midnight Violet")
+		task.wait()
+		x("Midnight Violet")
+		J(N.Accent)
+	end)
+	-- Flush retry notes queued before the UI existed.
+	if type(_G.FF3_BootNotes) == "table" then
+		for _, bn in ipairs(_G.FF3_BootNotes) do
+			q:Notify({ Title = bn.Title or "Bypass", Content = bn.Content or "", Duration = 4 })
+		end
+		_G.FF3_BootNotes = {}
+	end
+	if _G.FF3_BypassLoaded then
+		q:Notify({ Title = "Bypass", Content = "Anti-cheat bypass loaded successfully.", Duration = 4 })
+	end
+	q:Notify({ Title = "FF3 God", Content = "Loaded successfully. Credits to " .. p .. ".", Duration = 5 })
+	q:Notify({ Title = "Discord", Content = L, Duration = 6 })
+end)
